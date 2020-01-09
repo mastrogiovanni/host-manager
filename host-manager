@@ -1,0 +1,101 @@
+#!/usr/bin/env python
+
+import os
+
+class HostMapper():
+    
+    def __init__(self, host_file = "/etc/hosts"):
+        self.host_file = host_file
+        self.results = self.__load_hosts__()
+        self.__clean__()
+        
+    def dump(self):
+        print(self.results)
+        
+    def __load_hosts__(self):
+        
+        if not os.path.exists(self.host_file):
+            return {}
+        
+        f = open(self.host_file, "r")
+        contents = f.read()
+        f.close()
+
+        result = {}
+        for line in contents.split("\n"):
+            line = line.strip()
+            if not line.startswith("#") and not line == "":
+                host, *items = line.split(" ")
+                for item in items:
+                    item = item.strip()
+                    if not item == "":
+                        # print(f"{item} => {host}")
+                        if host in result:
+                            result[host].append(item)
+                        else:
+                            result[host] = [item]
+        return result
+    
+    def __clean__(self):
+        cleaned = {}
+        for ip in self.results:
+            seen = set()
+            items = [x for x in self.results[ip] if x not in seen and not seen.add(x)]
+            if len(items) > 0:
+                cleaned[ip] = items
+        self.results = cleaned
+        
+    def synchronize(self):
+        content = ""
+        for ip in self.results:
+            row = ' '.join(self.results[ip])
+            content = content + f"{ip} {row}\n\n"
+        file = open(self.host_file, "w+")
+        file.write(content)
+        file.close()
+
+    def add_host_mapping(self, name, ip):
+        if ip in self.results:
+            self.results[ip].append(name)
+        else:
+            self.results[ip] = [name]
+        self.__clean__()
+            
+    def del_host_mapping(self, name):
+        for ip in self.results:
+            if name in self.results[ip]:
+                items = self.results[ip]
+                items.remove(name)
+                self.results[ip] = items
+                break
+        self.__clean__()
+
+import sys
+
+if len(sys.argv) == 4:
+    if sys.argv[1] == "add":
+        (name, ip) = sys.argv[2:]
+        mapper = HostMapper()
+        mapper.add_host_mapping(name, ip)
+        mapper.synchronize()
+        print("Added", name, "to", ip)
+        sys.exit(0)
+
+if len(sys.argv) == 3:
+    if sys.argv[1] == "del":
+        name = sys.argv[2]
+        mapper = HostMapper()
+        mapper.del_host_mapping(name)
+        mapper.synchronize()
+        print("Deleted", name)
+        sys.exit(0)
+
+print("Usage:")
+print("\thost-manager [add|del] hostname [ip]")
+print()
+print("Examples:")
+print("> host-manager add kubeflow.development.com 192.168.0.1")
+print("\t=> maps host kubeflow.development.com to ip 192.168.0.1")
+print()
+print("> host-manager del kubeflow.development.com")
+print("\t=> removes the mapping of host kubeflow.development.com")
